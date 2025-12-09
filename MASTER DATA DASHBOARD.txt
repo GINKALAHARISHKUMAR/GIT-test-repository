@@ -1,0 +1,261 @@
+/**
+ *@NApiVersion 2.1
+ *@NScriptType Suitelet
+ */
+define(["N/ui/serverWidget", "N/search"], function (serverWidget, search) {
+
+    function onRequest(context) {
+        var form = serverWidget.createForm({
+            title: "Master Data"
+        });
+
+        var transactionhtml = form.addField({
+            id: 'custpage_transactionhtml',
+            label: "Master Data Tables",
+            type: serverWidget.FieldType.INLINEHTML
+        });
+
+        // ========== Helper Function ==========
+        function mySearch(type, filters, columns) {
+            var searchObj = search.create({ type: type, filters: filters, columns: columns });
+            var results = [];
+            var pagedData = searchObj.runPaged({ pageSize: 1000 });
+            pagedData.pageRanges.forEach(function (pageRange) {
+                var page = pagedData.fetch({ index: pageRange.index });
+                page.data.forEach(function (result) {
+                    results.push(result);
+                });
+            });
+            return results;
+        }
+
+        // ========== Transactions Table ==========
+        var transactionColumns = [
+            search.createColumn({ name: "type", summary: "GROUP", label: "Type" })
+        ];
+        var availabletransactions = mySearch('transaction', [], transactionColumns);
+
+        // ========== Scripts Table ==========
+        var scriptColumns = [search.createColumn({ name: "isinactive", label: "Inactive" })];
+        var scripts = mySearch('script', [], scriptColumns);
+
+        var scriptCounts = { Active: 0, Inactive: 0 };
+        scripts.forEach(function (row) {
+            var inactive = row.getValue(scriptColumns[0]);
+            if (inactive) scriptCounts.Inactive++;
+            else scriptCounts.Active++;
+        });
+
+        var scriptClassifications = [
+            { classification: "Client Script", count: 12 },
+            { classification: "User Event", count: 8 },
+            { classification: "Suitelet", count: 5 },
+            { classification: "Scheduled Script", count: 6 }
+        ];
+
+        // ========== Entities Table ==========
+        var entityConfig = [
+            { type: "customer", name: "Customer", url: "/app/common/entity/custjob.nl?whence=" },
+            { type: "vendor", name: "Vendor", url: "/app/common/entity/vendor.nl?whence=" },
+            { type: "employee", name: "Employee", url: "/app/common/entity/employee.nl?whence=" },
+            { type: "partner", name: "Partner", url: "/app/common/entity/partner.nl?whence=" },
+            { type: "contact", name: "Contact", url: "/app/common/entity/contact.nl?whence=" },
+            { type: "lead", name: "Lead", url: "/app/common/entity/custjob.nl?stage=LEAD" }
+        ];
+
+        var entityData = [];
+        entityConfig.forEach(function (e) {
+            var results = mySearch(e.type, [], [search.createColumn({ name: "internalid", summary: "COUNT" })]);
+            var count = results.length > 0 ? results[0].getValue({ name: "internalid", summary: "COUNT" }) : 0;
+            entityData.push({ name: e.name, count: count, url: e.url });
+        });
+
+        // ========== Items Table ==========
+        var itemTypes = [
+            { type: "inventoryitem", name: "Inventory Item", url: "/app/common/item/itemlist.nl?type=InvtPart" },
+            { type: "noninventoryitem", name: "Non-Inventory Item", url: "/app/common/item/itemlist.nl?type=NonInvtPart" },
+            { type: "serviceitem", name: "Service Item", url: "/app/common/item/itemlist.nl?type=Service" },
+            { type: "otherchargeitem", name: "Other Charge Item", url: "/app/common/item/itemlist.nl?type=OthChrg" },
+            { type: "kititem", name: "Kit/Package Item", url: "/app/common/item/itemlist.nl?type=Kit" },
+            { type: "assemblyitem", name: "Assembly Item", url: "/app/common/item/itemlist.nl?type=Assembly" }
+        ];
+
+        var itemData = [];
+        itemTypes.forEach(function (i) {
+            var results = mySearch(i.type, [], [search.createColumn({ name: "internalid", summary: "COUNT" })]);
+            var count = results.length > 0 ? results[0].getValue({ name: "internalid", summary: "COUNT" }) : 0;
+            itemData.push({ name: i.name, count: count, url: i.url });
+        });
+
+        // ========== Build HTML ==========
+        var htmlContent = `
+    <style>
+        .portlet {
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+            margin: 20px;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            background: #fff;
+            flex: 1;
+            min-width: 250px;
+        }
+        .portlet-header {
+            background: linear-gradient(90deg, #0073ea, #005bb5);
+            padding: 12px 18px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+            border-bottom: 2px solid #005bb5;
+            border-radius: 12px 12px 0 0;
+        }
+        .portlet-body {
+            padding: 15px;
+        }
+        .portlet-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        .portlet-table th {
+            background: #f4f6f9;
+            text-align: left;
+            padding: 10px;
+            border-bottom: 2px solid #ddd;
+            font-size: 15px;
+        }
+        .portlet-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        .portlet-table tr:hover td {
+            background-color: #f0f7ff;
+        }
+        .transaction-link {
+            text-decoration: none;
+            color: #0073ea;
+            font-weight: 500;
+            transition: 0.2s;
+        }
+        .transaction-link:hover {
+            color: #005bb5;
+            text-decoration: underline;
+        }
+        .dual-portlet {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+    </style>
+
+    <div class="dual-portlet">
+
+        <!-- Transactions Table -->
+        <div class="portlet">
+            <div class="portlet-header">Available Transactions</div>
+            <div class="portlet-body">
+                <table class="portlet-table">
+                    <tr><th>Transaction Type</th></tr>
+`;
+
+        availabletransactions.forEach(function (row) {
+            var typeName = row.getValue(transactionColumns[0]);
+            var typetext = row.getText(transactionColumns[0]);
+            htmlContent += `
+                    <tr>
+                        <td>
+                            <a class="transaction-link" target="_blank" 
+                               href="https://td3040077.app.netsuite.com/app/accounting/transactions/transactionlist.nl?Transaction_TYPE=${typeName}">
+                               ${typetext}
+                            </a>
+                        </td>
+                    </tr>`;
+        });
+
+        htmlContent += `
+                </table>
+            </div>
+        </div>
+`;
+
+        // Scripts Table (Active/Inactive + Classifications)
+        htmlContent += `
+        <div class="portlet">
+            <div class="portlet-header">Scripts Overview</div>
+            <div class="portlet-body">
+                <table class="portlet-table">
+                    <tr><th>Status</th><th>Count</th></tr>
+                    <tr><td>Active</td><td>${scriptCounts.Active}</td></tr>
+                    <tr><td>Inactive</td><td>${scriptCounts.Inactive}</td></tr>
+                </table>
+
+                <table class="portlet-table">
+                    <tr><th>Classification</th><th>Count</th></tr>
+`;
+
+        scriptClassifications.forEach(function (c) {
+            htmlContent += `<tr><td>${c.classification}</td><td>${c.count}</td></tr>`;
+        });
+
+        htmlContent += `
+                </table>
+            </div>
+        </div>
+`;
+
+        // Entities Table
+        htmlContent += `
+        <div class="portlet">
+            <div class="portlet-header">Entities Overview</div>
+            <div class="portlet-body">
+                <table class="portlet-table">
+                    <tr><th>Entity</th><th>Count</th></tr>
+`;
+
+        entityData.forEach(function (e) {
+            htmlContent += `
+                <tr>
+                    <td><a class="transaction-link" target="_blank" href="https://td3040077.app.netsuite.com${e.url}">${e.name}</a></td>
+                    <td>${e.count}</td>
+                </tr>`;
+        });
+
+        htmlContent += `
+                </table>
+            </div>
+        </div>
+`;
+
+        // Items Table
+        htmlContent += `
+        <div class="portlet">
+            <div class="portlet-header">Items Overview</div>
+            <div class="portlet-body">
+                <table class="portlet-table">
+                    <tr><th>Item Type</th><th>Count</th></tr>
+`;
+
+        itemData.forEach(function (i) {
+            htmlContent += `
+                <tr>
+                    <td><a class="transaction-link" target="_blank" href="https://td3040077.app.netsuite.com${i.url}">${i.name}</a></td>
+                    <td>${i.count}</td>
+                </tr>`;
+        });
+
+        htmlContent += `
+                </table>
+            </div>
+        </div>
+
+    </div>
+`;
+
+        transactionhtml.defaultValue = htmlContent;
+
+        context.response.writePage(form);
+    }
+
+    return { onRequest: onRequest };
+});
